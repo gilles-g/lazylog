@@ -47,7 +47,11 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, s: StatusLine<'_>) {
     }
     if let Some((msg, is_err)) = s.toast {
         spans.push(Span::raw("  "));
-        let color = if is_err { Color::LightRed } else { Color::LightGreen };
+        let color = if is_err {
+            Color::LightRed
+        } else {
+            Color::LightGreen
+        };
         spans.push(Span::styled(msg.to_string(), Style::default().fg(color)));
     }
     spans.push(Span::raw("   "));

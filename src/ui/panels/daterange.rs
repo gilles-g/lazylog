@@ -240,10 +240,9 @@ impl DateRangeModal {
         frame.render_widget(field_widget("From", &self.from_input, from_active), rows[0]);
         frame.render_widget(field_widget("To", &self.to_input, to_active), rows[1]);
 
-        let hint = Paragraph::new(
-            "Empty = no bound · YYYY-MM-DD · YYYY-MM-DD HH:MM[:SS] · RFC3339",
-        )
-        .style(Style::default().fg(Color::DarkGray));
+        let hint =
+            Paragraph::new("Empty = no bound · YYYY-MM-DD · YYYY-MM-DD HH:MM[:SS] · RFC3339")
+                .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(hint, rows[2]);
 
         if let Some(err) = &self.error {
