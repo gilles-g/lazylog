@@ -89,7 +89,10 @@ pub fn compute(format: LogFormat, events: &[LogEvent], visible: &[u32]) -> Facet
             .iter()
             .map(|spec| s.spawn(move || compute_one(*spec, events, visible)))
             .collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or(None))
+            .collect()
     });
     FacetIndex {
         groups: groups.into_iter().flatten().collect(),

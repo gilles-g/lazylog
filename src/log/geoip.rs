@@ -6,6 +6,11 @@ use std::sync::Mutex;
 use anyhow::{Context, Result};
 use maxminddb::{geoip2, Reader};
 
+/// Hard cap on the in-memory IP → country cache. A hostile log could otherwise
+/// pin millions of distinct IPs in memory. On overflow we drop the cache and
+/// start over — no LRU bookkeeping, no extra dependency.
+const CACHE_MAX_ENTRIES: usize = 100_000;
+
 /// A GeoIP database backed by a `.mmdb` file (MaxMind GeoLite2 or DB-IP lite).
 /// Resolves IPs to a country label. Each resolved IP is cached in-memory so
 /// repeated lookups during filtering / facet computation are essentially free.
@@ -36,6 +41,9 @@ impl GeoDb {
         }
         let label = self.resolve(ip);
         if let Ok(mut cache) = self.cache.lock() {
+            if cache.len() >= CACHE_MAX_ENTRIES {
+                cache.clear();
+            }
             cache.insert(ip, label.clone());
         }
         label

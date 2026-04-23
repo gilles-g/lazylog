@@ -38,7 +38,8 @@ pub fn export_group(
         .and_then(|s| s.to_str())
         .unwrap_or("log");
     let ts = Local::now().format("%Y%m%d-%H%M%S");
-    let out = dir.join(format!("lazylog-{stem}-{group_key}-{ts}.txt"));
+    let safe_key = sanitize_key(group_key);
+    let out = dir.join(format!("lazylog-{stem}-{safe_key}-{ts}.txt"));
 
     let file = File::create(&out).with_context(|| format!("create {}", out.display()))?;
     let mut w = BufWriter::new(file);
@@ -74,4 +75,38 @@ pub fn export_filtered(
     }
     w.flush()?;
     Ok(out)
+}
+
+/// Keep only ASCII alphanumerics, `-` and `_` — anything else (including
+/// path separators, `..`, NUL, spaces) becomes `_`. Prevents path traversal
+/// if `group_key` ever becomes caller-controlled.
+fn sanitize_key(key: &str) -> String {
+    let mut out: String = key
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() {
+        out.push_str("group");
+    }
+    out.truncate(64);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_key;
+
+    #[test]
+    fn sanitize_strips_path_traversal() {
+        assert_eq!(sanitize_key("../../etc/passwd"), "______etc_passwd");
+        assert_eq!(sanitize_key("country"), "country");
+        assert_eq!(sanitize_key(""), "group");
+        assert_eq!(sanitize_key("a/b\\c:d"), "a_b_c_d");
+    }
 }
