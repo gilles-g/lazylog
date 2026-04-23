@@ -1,0 +1,7 @@
+[15-Jan-2024 10:23:45 UTC] PHP Notice:  Undefined index: foo in /var/www/a.php on line 12
+[15-Jan-2024 10:23:46 UTC] PHP Warning:  include(missing.php): failed to open stream in /var/www/b.php on line 5
+[15-Jan-2024 10:24:12 UTC] PHP Fatal error:  Uncaught RuntimeException: boom in /var/www/c.php:42
+[15-Jan-2024 10:24:13 UTC] Stack trace:
+[15-Jan-2024 10:24:13 UTC] #0 /var/www/c.php(10): callIt()
+[15-Jan-2024 10:24:14 UTC] PHP Deprecated:  Function each() is deprecated in /var/www/d.php on line 8
+[15-Jan-2024 10:25:00 UTC] PHP Parse error:  syntax error, unexpected '}' in /var/www/e.php on line 20

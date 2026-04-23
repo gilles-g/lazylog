@@ -1,152 +1,181 @@
-# lazylog
+# LazyLog
 
-TUI pour explorer les fichiers de logs (Symfony / Monolog, nginx access & error,
-Apache access & error, PHP errors, texte générique), inspiré de lazygit.
+A terminal user interface (TUI) for exploring log files (Symfony / Monolog, nginx access & error, Apache access & error, PHP errors, generic text), inspired by [lazygit](https://github.com/jesseduffield/lazygit).
 
-- Ouverture en mémoire mappée (pas de recopie) — tient sur des fichiers de plusieurs Go.
-- Parsing en tâche de fond, UI jamais bloquée.
-- Facettes cliquables (niveau, canal, méthode, status, IP, pays…), recherche plein texte,
-  filtre par plage de dates, histogramme temporel.
-- Navigation clavier type vim : `j/k`, `g/G`, `PgUp/PgDn`.
-- Les événements les plus récents s'affichent **en bas** de la liste, comme `tail -f`.
+![Rust](https://img.shields.io/badge/rust-stable-orange)
+
+> **Beta** — This project is under active development. Expect rough edges and breaking changes.
+
+Built with [ratatui](https://ratatui.rs) + [crossterm](https://github.com/crossterm-rs/crossterm).
+
+## Features
+
+- **Memory-mapped file opening** — no copy, handles multi-GB files.
+- **Background parsing** — the UI never blocks.
+- **Clickable facets** (level, channel, method, status, IP, country…), full-text search, date-range filter, time histogram.
+- **Vim-style keyboard navigation**: `j/k`, `g/G`, `PgUp/PgDn`.
+- The **most recent events are displayed at the bottom** of the list, like `tail -f`.
+
+## Prerequisites
+
+- Rust (stable) — only needed if you build from source
 
 ## Installation
 
-```bash
-# Depuis les sources (nécessite cargo)
-cargo install --path .
+### From GitHub releases (recommended)
 
-# Ou binaire pré-compilé
-tar -xzf lazylog-<version>-<os>-<arch>.tar.gz
-install -m 0755 lazylog-*/lazylog "$HOME/.local/bin/lazylog"
+Pre-built binaries are available on the [releases page](https://github.com/gilles-g/lazylog/releases).
+
+Download the archive matching your platform, extract it, and move the binary to a directory in your `PATH`:
+
+```bash
+# Example for Linux x86_64 — adjust the version and asset name as needed
+curl -L https://github.com/gilles-g/lazylog/releases/latest/download/lazylog-linux-x86_64.tar.gz \
+  | tar -xz
+mv lazylog ~/.local/bin/
 ```
 
-## Utilisation
+### From source
 
 ```bash
-# Ouvre un fichier directement
+git clone https://github.com/gilles-g/lazylog.git
+cd lazylog
+cargo build --release
+```
+
+The binary will be at `./target/release/lazylog`.
+
+To make it available globally, add it to your `PATH`:
+
+```bash
+cp ./target/release/lazylog ~/.local/bin/
+```
+
+> Make sure `~/.local/bin` is in your `PATH`. If not, add this to your shell config (`~/.bashrc`, `~/.zshrc`, etc.):
+>
+> ```bash
+> export PATH="$HOME/.local/bin:$PATH"
+> ```
+
+### From crates.io
+
+```bash
+cargo install --path .
+```
+
+## Usage
+
+```bash
+# Open a file directly
 lazylog /var/log/nginx/access.log
 
-# Pas de chemin → picker interactif qui scanne var/log, logs/ et /var/log
+# No path → interactive picker that scans var/log, logs/ and /var/log
 lazylog
 
-# Forcer un format si l'auto-détection se trompe
+# Force a format if auto-detection gets it wrong
 lazylog --format nginx-access access.log
 
-# Restreindre la période chargée (plus rapide sur gros fichiers)
+# Restrict the loaded time range (faster on large files)
 lazylog --from '2026-04-22' --to '2026-04-22 18:00:00' access.log
-lazylog --all huge.log   # désactive le prompt date-range sur fichiers > 100 Mo
+lazylog --all huge.log   # disables the date-range prompt for files > 100 MB
 ```
 
-Formats reconnus pour `--format` :
+Recognized values for `--format`:
 `symfony`, `php`, `nginx-access`, `nginx-error`, `apache-access`, `apache-error`, `generic`.
 
-### Raccourcis clavier
+### Keybindings
 
-| Touche           | Action                                  |
-|------------------|-----------------------------------------|
-| `q` / `Ctrl-C`   | quitter                                 |
-| `?`              | afficher / masquer l'aide               |
-| `1` / `2`        | onglet Events / Histogram               |
-| `j` / `↓`        | descendre (vers plus récent)            |
-| `k` / `↑`        | monter (vers plus ancien)               |
-| `g`              | haut de la liste (plus ancien)          |
-| `G`              | bas de la liste (plus récent, tail)     |
-| `PgUp` / `PgDn`  | saut de 10 lignes                       |
-| `f` / `e`        | focus panneau Facets / Events           |
-| `Space`          | activer / désactiver une valeur de facette |
-| `/`              | recherche plein texte                   |
-| `d`              | modale de plage de dates                |
-| `r`              | reset de tous les filtres               |
-| `x`              | menu d'export (facette focus / log filtré → `.txt`) |
-| `Enter`          | ouvrir le détail (à venir)              |
-| `Esc`            | fermer popup / effacer la recherche     |
+| Key              | Action                                      |
+|------------------|---------------------------------------------|
+| `q` / `Ctrl-C`   | quit                                        |
+| `?`              | show / hide help                            |
+| `1` / `2`        | Events / Histogram tab                      |
+| `j` / `↓`        | move down (toward most recent)              |
+| `k` / `↑`        | move up (toward oldest)                     |
+| `g`              | top of the list (oldest)                    |
+| `G`              | bottom of the list (most recent, tail)      |
+| `PgUp` / `PgDn`  | jump 10 lines                               |
+| `f` / `e`        | focus Facets / Events panel                 |
+| `Space`          | toggle a facet value                        |
+| `/`              | full-text search                            |
+| `d`              | date-range modal                            |
+| `r`              | reset all filters                           |
+| `x`              | export menu (focused facet / filtered log → `.txt`) |
+| `Enter`          | open detail (coming soon)                   |
+| `Esc`            | close popup / clear search                  |
 
-## Facette « Country » via GeoIP
+## "Country" facet via GeoIP
 
-`lazylog` peut afficher une facette **Country** sur les logs access (et error)
-nginx/apache, en résolvant chaque IP cliente vers son pays à l'aide d'une base
-GeoIP2 au format `.mmdb`. Sans base, la facette n'apparaît simplement pas — le
-reste du TUI fonctionne normalement.
+`lazylog` can display a **Country** facet on nginx/apache access (and error)
+logs, resolving each client IP to its country using a GeoIP2 database in
+`.mmdb` format. Without a database, the facet simply does not appear — the
+rest of the TUI works normally.
 
-### 1. Télécharger une base `.mmdb`
+### 1. Obtain an `.mmdb` database
 
-Deux options gratuites, interchangeables (même format MaxMind DB) :
+You need a free GeoIP2 country database in MaxMind DB (`.mmdb`) format. Several
+free providers exist (DB-IP Lite, MaxMind GeoLite2, etc.) — pick one, respect
+its license, and figure out how to download the file yourself. Any
+`country`-level `.mmdb` will work.
 
-**DB-IP Lite (recommandé — pas de compte)**
-Licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), mise à jour mensuelle.
+### 2. Place the database in an auto-detected location
 
-```bash
-# Remplace YYYY-MM par le mois courant (ex: 2026-04)
-curl -fL -o /tmp/dbip.mmdb.gz \
-  "https://download.db-ip.com/free/dbip-country-lite-YYYY-MM.mmdb.gz"
-gunzip /tmp/dbip.mmdb.gz
-```
+`lazylog` looks, in order, at:
 
-**MaxMind GeoLite2 Country** (gratuit mais nécessite un compte + licence key)
-<https://www.maxmind.com/en/geolite2/signup> puis télécharger `GeoLite2-Country.mmdb`.
-
-### 2. Placer la base à un endroit auto-détecté
-
-`lazylog` cherche, dans l'ordre :
-
-1. Le fichier passé à `--geoip /chemin/vers/geoip.mmdb`
-2. `$LAZYLOG_GEOIP` (variable d'environnement)
+1. The file passed to `--geoip /path/to/geoip.mmdb`
+2. `$LAZYLOG_GEOIP` (environment variable)
 3. `$XDG_DATA_HOME/lazylog/geoip.mmdb`
 4. `~/.local/share/lazylog/geoip.mmdb`
 5. `~/.lazylog/geoip.mmdb`
 
-Install type (pas besoin de flag ensuite) :
+Typical install (no flag needed afterwards):
 
 ```bash
 mkdir -p ~/.local/share/lazylog
-mv /tmp/dbip.mmdb ~/.local/share/lazylog/geoip.mmdb
+mv /path/to/your.mmdb ~/.local/share/lazylog/geoip.mmdb
 ```
 
-Ou usage ponctuel :
+Or one-off usage:
 
 ```bash
 lazylog --geoip ~/Downloads/dbip.mmdb access.log
-# ou
+# or
 LAZYLOG_GEOIP=~/Downloads/dbip.mmdb lazylog access.log
 ```
 
-### 3. Vérifier
+### 3. Verify
 
-Au démarrage, un log est écrit dans `$XDG_CACHE_HOME/lazylog/lazylog.log`
-(ou `~/.cache/lazylog/lazylog.log`) :
+At startup, a log line is written to `$XDG_CACHE_HOME/lazylog/lazylog.log`
+(or `~/.cache/lazylog/lazylog.log`):
 
 ```
 [INFO  lazylog] geoip database loaded: /home/you/.local/share/lazylog/geoip.mmdb
 ```
 
-Dans le TUI, sur un log nginx/apache access, une rubrique **Country** apparaît
-dans le panneau Facets (top 15 pays par volume). `Space` pour filtrer.
+In the TUI, on an nginx/apache access log, a **Country** section appears in
+the Facets panel (top 15 countries by volume). Press `Space` to filter.
 
 ### Notes
 
-- La résolution est faite au chargement, en tâche de fond, avec un cache
-  mémoire par IP (les IPs qui reviennent souvent ne paient le coût qu'une
-  seule fois).
-- Aucune requête réseau n'est faite au runtime : la base `.mmdb` est entièrement
-  locale.
-- Les IPs privées (10.0.0.0/8, 192.168.0.0/16, etc.) ne sont pas géolocalisées
-  et n'apparaissent pas dans la facette.
-- Respecter la licence de la base choisie si tu redistribues les résultats.
+- Resolution is done at load time, in the background, with an in-memory cache
+  per IP (frequent IPs only pay the cost once).
+- No network request is made at runtime: the `.mmdb` database is fully local.
+- Private IPs (10.0.0.0/8, 192.168.0.0/16, etc.) are not geolocated and do
+  not appear in the facet.
+- Respect the license of your chosen database if you redistribute the results.
 
-## Journal applicatif
+## Application log
 
-En cas de problème de parsing ou de chargement, le journal est ici :
+If something goes wrong with parsing or loading, the log lives at:
 
 ```
 $XDG_CACHE_HOME/lazylog/lazylog.log
-# ou, à défaut :
+# or, as a fallback:
 ~/.cache/lazylog/lazylog.log
 ```
 
-Niveau ajustable via `RUST_LOG=debug lazylog …`.
+Log level tunable via `RUST_LOG=debug lazylog …`.
 
-## Licence
+## License
 
 MIT.
-# lazylog

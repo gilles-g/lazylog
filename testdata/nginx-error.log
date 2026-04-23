@@ -1,0 +1,6 @@
+2024/01/15 10:23:45 [notice] 1#1: start worker process 42
+2024/01/15 10:24:12 [error] 42#42: *101 open() "/var/www/admin" failed (13: Permission denied), client: 10.0.0.6, server: example.com, request: "GET /admin HTTP/1.1"
+2024/01/15 10:24:15 [error] 42#42: *102 upstream timed out (110: Connection timed out), client: 1.2.3.4, server: example.com
+2024/01/15 10:25:10 [crit] 42#42: *103 SSL_do_handshake() failed, client: 10.0.0.7
+2024/01/15 10:26:00 [warn] 42#42: *104 client sent invalid request while reading client request line, client: 8.8.8.8
+2024/01/15 10:28:30 [info] 42#42: *105 client prematurely closed connection, client: 1.2.3.4
