@@ -47,13 +47,15 @@ fn collect(root: &Path, depth: usize, out: &mut Vec<CandidateLog>) {
 }
 
 fn is_log_like(p: &Path) -> bool {
-    let name = match p.file_name().and_then(|n| n.to_str()) {
+    let raw = match p.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_ascii_lowercase(),
         None => return false,
     };
-    if name.ends_with(".gz") || name.ends_with(".bz2") || name.ends_with(".zip") {
+    if raw.ends_with(".bz2") || raw.ends_with(".zip") {
         return false;
     }
+    // Treat `foo.log.gz` like `foo.log` — we can read gzip-compressed logs.
+    let name = raw.strip_suffix(".gz").unwrap_or(raw.as_str());
     if name.ends_with(".log") {
         return true;
     }

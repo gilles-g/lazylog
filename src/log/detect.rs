@@ -20,7 +20,10 @@ pub fn detect_from_path(path: &Path) -> LogFormat {
 }
 
 fn hint_from_name(path: &Path) -> Option<LogFormat> {
-    let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    let raw = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    // Strip a trailing `.gz` so a file named `access.log.gz` matches the same
+    // rules as `access.log`.
+    let name: String = raw.strip_suffix(".gz").map(str::to_string).unwrap_or(raw);
     if name.contains("php") && (name.contains("error") || name.contains("err")) {
         return Some(LogFormat::PhpError);
     }
@@ -70,8 +73,7 @@ fn detect_from_content(path: &Path) -> LogFormat {
 }
 
 fn score_format(path: &Path, format: LogFormat) -> Option<f32> {
-    let file = std::fs::File::open(path).ok()?;
-    let reader = BufReader::new(file);
+    let reader = open_reader(path)?;
     let parser = parser_for(format);
     let mut total = 0_usize;
     let mut hits = 0_usize;
@@ -94,4 +96,22 @@ fn score_format(path: &Path, format: LogFormat) -> Option<f32> {
         return None;
     }
     Some(hits as f32 / total as f32)
+}
+
+fn open_reader(path: &Path) -> Option<Box<dyn BufRead>> {
+    let file = std::fs::File::open(path).ok()?;
+    if is_gzip(path) {
+        Some(Box::new(BufReader::new(flate2::read::MultiGzDecoder::new(
+            file,
+        ))))
+    } else {
+        Some(Box::new(BufReader::new(file)))
+    }
+}
+
+fn is_gzip(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("gz"))
+        .unwrap_or(false)
 }
