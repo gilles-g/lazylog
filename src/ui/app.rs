@@ -3,21 +3,29 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::backend::Backend;
+use ratatui::layout::Rect;
 use ratatui::Terminal;
 
+use crate::log::correlation;
 use crate::log::event::LogEvent;
 use crate::log::format::LogFormat;
 use crate::log::geoip::GeoDb;
 use crate::log::loader::{self, DateFilter, LoadHandle, LoadMsg};
+use crate::log::parser::parser_for;
 use crate::log::source::FileSource;
 use crate::query::export;
 use crate::query::facets::{self, FacetIndex};
 use crate::query::filter::{self, Filter};
 use crate::ui::components::{help_popup, input_box::InputBox, statusbar};
 use crate::ui::keys::{Action, KeyMap};
-use crate::ui::layout::{main_layout, split_content_with_detail};
+use crate::ui::layout::{
+    adjust_ratio, main_layout, split_content_with_detail, DEFAULT_EVENTS_RATIO,
+    DEFAULT_FACETS_RATIO,
+};
 use crate::ui::panels::daterange::{DateRangeModal, Mode as DateRangeMode, Preset};
 use crate::ui::panels::detail::DetailPanel;
 use crate::ui::panels::events::EventsPanel;
@@ -33,6 +41,7 @@ pub enum Focus {
 pub struct App {
     path: PathBuf,
     format: LogFormat,
+    geo: Option<Arc<GeoDb>>,
     source: Option<Arc<FileSource>>,
     events: Vec<LogEvent>,
     visible: Vec<u32>,
@@ -60,13 +69,26 @@ pub struct App {
     /// visible list, since newest is displayed at the bottom).
     auto_tail: bool,
 
+    follow_mode: bool,
+    follow_resume_offset: u64,
+    follow_next_line_no: u32,
+    follow_last_poll: Instant,
+
     toast: Option<(String, bool, Instant)>,
+
+    resize_mode: bool,
+    facets_ratio: f64,
+    events_ratio: f64,
+
+    last_facets_area: Rect,
+    last_events_area: Rect,
 
     quit: bool,
 }
 
 const RECOMPUTE_DEBOUNCE: Duration = Duration::from_millis(400);
 const TOAST_TTL: Duration = Duration::from_secs(4);
+const FOLLOW_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 impl App {
     pub fn new(
@@ -79,10 +101,11 @@ impl App {
             from: initial_filter.from,
             to: initial_filter.to,
         };
-        let load = loader::load(&path, format, date_filter, geo);
+        let load = loader::load(&path, format, date_filter, geo.clone());
         Self {
             path,
             format,
+            geo,
             source: None,
             events: Vec::new(),
             visible: Vec::new(),
@@ -103,7 +126,16 @@ impl App {
             last_recompute: Instant::now(),
             pending_dirty: false,
             auto_tail: true,
+            follow_mode: false,
+            follow_resume_offset: 0,
+            follow_next_line_no: 0,
+            follow_last_poll: Instant::now(),
             toast: None,
+            resize_mode: false,
+            facets_ratio: DEFAULT_FACETS_RATIO,
+            events_ratio: DEFAULT_EVENTS_RATIO,
+            last_facets_area: Rect::default(),
+            last_events_area: Rect::default(),
             quit: false,
         }
     }
@@ -112,12 +144,14 @@ impl App {
         while !self.quit {
             terminal.draw(|frame| self.draw(frame))?;
             self.drain_loader();
+            self.poll_follow();
             self.maybe_recompute();
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Key(key) if key.kind != KeyEventKind::Release => {
                         self.handle_key(key);
                     }
+                    Event::Mouse(m) => self.handle_mouse(m),
                     Event::Resize(_, _) => {}
                     _ => {}
                 }
@@ -208,6 +242,25 @@ impl App {
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) {
+        if self.resize_mode {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.resize_mode = false,
+                KeyCode::Left => {
+                    self.facets_ratio = adjust_ratio(self.facets_ratio, false);
+                }
+                KeyCode::Right => {
+                    self.facets_ratio = adjust_ratio(self.facets_ratio, true);
+                }
+                KeyCode::Up => {
+                    self.events_ratio = adjust_ratio(self.events_ratio, false);
+                }
+                KeyCode::Down => {
+                    self.events_ratio = adjust_ratio(self.events_ratio, true);
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.search.active {
             match key.code {
                 KeyCode::Esc => {
@@ -356,7 +409,266 @@ impl App {
                 self.export_menu = ExportMenu::default();
                 self.show_export = true;
             }
+            Action::EnterResize => {
+                self.resize_mode = true;
+            }
+            Action::ToggleFollow => self.toggle_follow(),
+            Action::Correlate => self.correlate_current(),
+            Action::YankLine => self.yank_current(),
+            Action::FocusLeft => self.focus = Focus::Facets,
+            Action::FocusRight => self.focus = Focus::Events,
         }
+    }
+
+    fn handle_mouse(&mut self, m: MouseEvent) {
+        // Any overlay swallows mouse input — the user should close it first.
+        if self.show_help
+            || self.show_daterange
+            || self.show_export
+            || self.search.active
+            || self.resize_mode
+        {
+            return;
+        }
+        let (col, row) = (m.column, m.row);
+        let in_events = point_in(self.last_events_area, col, row);
+        let in_facets = point_in(self.last_facets_area, col, row);
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if in_events {
+                    self.focus = Focus::Events;
+                    if let Some(new_cursor) = self.events_row_at(row) {
+                        self.auto_tail = false;
+                        self.event_cursor = new_cursor;
+                    }
+                } else if in_facets {
+                    self.focus = Focus::Facets;
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                if in_events {
+                    self.focus = Focus::Events;
+                    self.disable_tail_on_events();
+                    self.move_cursor(-3);
+                } else if in_facets {
+                    self.focus = Focus::Facets;
+                    self.move_cursor(-3);
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                if in_events {
+                    self.focus = Focus::Events;
+                    self.disable_tail_on_events();
+                    self.move_cursor(3);
+                } else if in_facets {
+                    self.focus = Focus::Facets;
+                    self.move_cursor(3);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Maps a terminal row within the Events panel back to an index into
+    /// `self.visible`, using the exact same viewport formula as the renderer.
+    fn events_row_at(&self, row: u16) -> Option<usize> {
+        let outer = self.last_events_area;
+        if outer.width < 2 || outer.height < 2 {
+            return None;
+        }
+        let inner_top = outer.y + 1;
+        let inner_bottom = outer.y + outer.height - 1;
+        if row < inner_top || row >= inner_bottom {
+            return None;
+        }
+        let row_offset = (row - inner_top) as usize;
+        let capacity = (outer.height.saturating_sub(2)).max(1) as usize;
+        if self.visible.is_empty() {
+            return None;
+        }
+        let max_start = self.visible.len().saturating_sub(capacity);
+        let start = self
+            .event_cursor
+            .saturating_sub(capacity / 2)
+            .min(max_start);
+        let candidate = start + row_offset;
+        if candidate >= self.visible.len() {
+            return None;
+        }
+        Some(candidate)
+    }
+
+    fn yank_current(&mut self) {
+        let Some(source) = self.source.as_deref() else {
+            self.set_toast("yank: source not ready".into(), true);
+            return;
+        };
+        let Some(&idx) = self.visible.get(self.event_cursor) else {
+            self.set_toast("yank: no event selected".into(), true);
+            return;
+        };
+        let ev = &self.events[idx as usize];
+        let line = source.slice(ev.offset, ev.len).to_string();
+        match arboard::Clipboard::new().and_then(|mut c| c.set_text(line.clone())) {
+            Ok(_) => {
+                let preview_len = line.chars().take(40).count();
+                let preview: String = line.chars().take(preview_len).collect();
+                let suffix = if line.chars().count() > preview_len {
+                    "…"
+                } else {
+                    ""
+                };
+                self.set_toast(format!("yanked: {preview}{suffix}"), false);
+            }
+            Err(e) => self.set_toast(format!("yank failed: {e}"), true),
+        }
+    }
+
+    fn toggle_follow(&mut self) {
+        if self.follow_mode {
+            self.follow_mode = false;
+            self.set_toast("follow: off".into(), false);
+            return;
+        }
+        let Some(source) = self.source.as_ref() else {
+            self.set_toast("follow: source not ready yet".into(), true);
+            return;
+        };
+        if source.is_compressed() {
+            self.set_toast(
+                "follow: not available on compressed files (.gz)".into(),
+                true,
+            );
+            return;
+        }
+        if self.loading {
+            self.set_toast("follow: wait for initial load to finish".into(), true);
+            return;
+        }
+        self.follow_mode = true;
+        self.follow_resume_offset = source.len() as u64;
+        self.follow_next_line_no = self
+            .events
+            .iter()
+            .map(|e| e.line_no)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        self.follow_last_poll = Instant::now();
+        self.auto_tail = true;
+        self.set_toast("follow: on — new lines will stream in".into(), false);
+    }
+
+    fn correlate_current(&mut self) {
+        let Some(source) = self.source.as_deref() else {
+            self.set_toast("correlate: source not ready".into(), true);
+            return;
+        };
+        let Some(&idx) = self.visible.get(self.event_cursor) else {
+            self.set_toast("correlate: no event selected".into(), true);
+            return;
+        };
+        let ev = &self.events[idx as usize];
+        match correlation::extract(ev, source) {
+            Some(id) => {
+                self.filter.text = id.clone();
+                self.search.buffer = id.clone();
+                self.auto_tail = false;
+                self.force_recompute();
+                self.set_toast(format!("correlate: filtering by '{id}'"), false);
+            }
+            None => self.set_toast(
+                "correlate: no trace_id / request_id found on this event".into(),
+                true,
+            ),
+        }
+    }
+
+    fn poll_follow(&mut self) {
+        if !self.follow_mode || self.loading {
+            return;
+        }
+        if self.follow_last_poll.elapsed() < FOLLOW_POLL_INTERVAL {
+            return;
+        }
+        self.follow_last_poll = Instant::now();
+
+        let Some(current) = self.source.as_ref() else {
+            return;
+        };
+        let current_len = current.len() as u64;
+        let disk_len = match std::fs::metadata(&self.path) {
+            Ok(m) => m.len(),
+            Err(_) => return,
+        };
+        if disk_len < current_len {
+            self.follow_mode = false;
+            self.set_toast("follow: file shrank (rotation?) — stopped".into(), true);
+            return;
+        }
+        if disk_len == current_len {
+            return;
+        }
+        let new_source = match FileSource::open(&self.path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.follow_mode = false;
+                self.set_toast(format!("follow: reopen failed: {e}"), true);
+                return;
+            }
+        };
+        self.ingest_tail(&new_source);
+        self.source = Some(new_source);
+    }
+
+    fn ingest_tail(&mut self, source: &FileSource) {
+        let bytes = source.bytes();
+        let start = (self.follow_resume_offset as usize).min(bytes.len());
+        if start >= bytes.len() {
+            return;
+        }
+        let parser = parser_for(self.format);
+        let date_filter = DateFilter {
+            from: self.filter.from,
+            to: self.filter.to,
+        };
+        let mut new_events: Vec<LogEvent> = Vec::new();
+        let mut line_start = start;
+        for nl_rel in memchr::memchr_iter(b'\n', &bytes[start..]) {
+            let nl = start + nl_rel;
+            let mut end = nl;
+            if end > line_start && bytes[end - 1] == b'\r' {
+                end -= 1;
+            }
+            if end > line_start {
+                let text = std::str::from_utf8(&bytes[line_start..end]).unwrap_or("");
+                let offset = line_start as u64;
+                let len = (end - line_start) as u32;
+                let ev = parser
+                    .parse(self.follow_next_line_no, offset, len, text)
+                    .unwrap_or_else(|| {
+                        LogEvent::unparsed(self.follow_next_line_no, offset, len, text)
+                    });
+                self.follow_next_line_no = self.follow_next_line_no.saturating_add(1);
+                if date_filter.admits(ev.timestamp) {
+                    new_events.push(ev);
+                }
+            }
+            line_start = nl + 1;
+        }
+        // Resume next tick from just past the last complete line. A partial
+        // trailing line (no `\n` yet) is deliberately left for the next poll —
+        // we'll re-scan its starting offset once the newline arrives.
+        self.follow_resume_offset = line_start as u64;
+
+        if new_events.is_empty() {
+            return;
+        }
+        loader::enrich(&mut new_events, self.geo.as_deref());
+        // events[0] must stay "newest"; new_events are in file order (oldest
+        // first), so we splice them reversed at the front.
+        self.events.splice(0..0, new_events.into_iter().rev());
+        self.pending_dirty = true;
     }
 
     fn run_export(&mut self, choice: ExportChoice) {
@@ -460,7 +772,8 @@ impl App {
 
     fn draw(&mut self, frame: &mut ratatui::Frame<'_>) {
         let area = frame.area();
-        let layout = main_layout(area);
+        let layout = main_layout(area, self.facets_ratio);
+        self.last_facets_area = layout.facets;
 
         FacetsPanel::render(
             frame,
@@ -472,7 +785,8 @@ impl App {
         );
 
         let (list_rect, detail_rect) =
-            split_content_with_detail(layout.content, !self.visible.is_empty());
+            split_content_with_detail(layout.content, !self.visible.is_empty(), self.events_ratio);
+        self.last_events_area = list_rect;
         EventsPanel::render(
             frame,
             list_rect,
@@ -511,6 +825,13 @@ impl App {
                 loading: self.loading,
                 cancelled: self.cancelled,
                 toast,
+                resize_mode: self.resize_mode,
+                follow_mode: self.follow_mode,
+                compressed: self
+                    .source
+                    .as_deref()
+                    .map(FileSource::is_compressed)
+                    .unwrap_or(false),
             },
         );
 
@@ -529,4 +850,13 @@ impl App {
             help_popup::render(frame, area);
         }
     }
+}
+
+fn point_in(rect: Rect, col: u16, row: u16) -> bool {
+    rect.width > 0
+        && rect.height > 0
+        && col >= rect.x
+        && col < rect.x + rect.width
+        && row >= rect.y
+        && row < rect.y + rect.height
 }

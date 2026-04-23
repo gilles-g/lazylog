@@ -209,7 +209,7 @@ fn push_line(
     buf.push(ev);
 }
 
-fn enrich(chunk: &mut [LogEvent], geo: Option<&GeoDb>) {
+pub(crate) fn enrich(chunk: &mut [LogEvent], geo: Option<&GeoDb>) {
     for ev in chunk.iter_mut() {
         let ip = match ev.fields.get("ip") {
             Some(v) => v.clone(),

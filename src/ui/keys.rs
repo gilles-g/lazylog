@@ -19,6 +19,12 @@ pub enum Action {
     CloseOverlay,
     ResetFilters,
     ExportFacet,
+    EnterResize,
+    ToggleFollow,
+    Correlate,
+    YankLine,
+    FocusLeft,
+    FocusRight,
 }
 
 pub struct KeyMap;
@@ -29,6 +35,7 @@ impl KeyMap {
         match ev.code {
             KeyCode::Char('q') => Some(Action::Quit),
             KeyCode::Char('c') if m.contains(KeyModifiers::CONTROL) => Some(Action::Quit),
+            KeyCode::Char('n') if m.contains(KeyModifiers::CONTROL) => Some(Action::EnterResize),
             KeyCode::Char('?') => Some(Action::Help),
             KeyCode::Char('j') | KeyCode::Down => Some(Action::Down),
             KeyCode::Char('k') | KeyCode::Up => Some(Action::Up),
@@ -43,6 +50,11 @@ impl KeyMap {
             KeyCode::Char('d') => Some(Action::OpenDateRange),
             KeyCode::Char('r') => Some(Action::ResetFilters),
             KeyCode::Char('x') => Some(Action::ExportFacet),
+            KeyCode::Char('F') => Some(Action::ToggleFollow),
+            KeyCode::Char('*') => Some(Action::Correlate),
+            KeyCode::Char('y') => Some(Action::YankLine),
+            KeyCode::Char('h') | KeyCode::Left => Some(Action::FocusLeft),
+            KeyCode::Char('l') | KeyCode::Right => Some(Action::FocusRight),
             KeyCode::Enter => Some(Action::OpenDetail),
             KeyCode::Esc => Some(Action::CloseOverlay),
             _ => None,
@@ -103,6 +115,30 @@ pub const HELP: &[Binding] = &[
     Binding {
         keys: "x",
         desc: "export menu (facet group or filtered log)",
+    },
+    Binding {
+        keys: "Ctrl-N",
+        desc: "resize panels (arrows to adjust, Esc to exit)",
+    },
+    Binding {
+        keys: "F",
+        desc: "toggle follow mode (tail -f live)",
+    },
+    Binding {
+        keys: "*",
+        desc: "correlate: filter by trace_id / request_id of current event",
+    },
+    Binding {
+        keys: "y",
+        desc: "yank: copy the selected line to the clipboard",
+    },
+    Binding {
+        keys: "h / l, ← / →",
+        desc: "switch focus between Facets and Events",
+    },
+    Binding {
+        keys: "mouse",
+        desc: "click to select, wheel to scroll",
     },
     Binding {
         keys: "Esc",

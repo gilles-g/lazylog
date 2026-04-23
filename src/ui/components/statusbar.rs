@@ -14,6 +14,9 @@ pub struct StatusLine<'a> {
     pub loading: bool,
     pub cancelled: bool,
     pub toast: Option<(&'a str, bool)>,
+    pub resize_mode: bool,
+    pub follow_mode: bool,
+    pub compressed: bool,
 }
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, s: StatusLine<'_>) {
@@ -53,6 +56,24 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, s: StatusLine<'_>) {
             Color::LightGreen
         };
         spans.push(Span::styled(msg.to_string(), Style::default().fg(color)));
+    }
+    if s.compressed {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled("gz", Style::default().fg(Color::DarkGray)));
+    }
+    if s.follow_mode {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            "● FOLLOW",
+            Style::default().fg(Color::LightGreen),
+        ));
+    }
+    if s.resize_mode {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            "resize: ←/→ facets, ↑/↓ events (Esc/Enter to exit)",
+            Style::default().fg(Color::LightMagenta),
+        ));
     }
     spans.push(Span::raw("   "));
     spans.push(Span::styled("?", Style::default().fg(Color::Cyan)));
