@@ -1,3 +1,4 @@
+pub mod correlation;
 pub mod detect;
 pub mod event;
 pub mod format;
