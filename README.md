@@ -11,9 +11,15 @@ Built with [ratatui](https://ratatui.rs) + [crossterm](https://github.com/crosst
 ## Features
 
 - **Memory-mapped file opening** — no copy, handles multi-GB files.
+- **Transparent gzip** — `.gz` files (e.g. rotated `access.log.1.gz`) are decompressed on open; no extra flag.
+- **Follow mode** (`F`) — live `tail -f`, new lines stream in at the bottom. Disabled on compressed files.
+- **Trace correlation** (`*`) — on a selected event, auto-filters by its `trace_id` / `request_id` / Monolog `token` so every related line clusters together.
+- **Yank to clipboard** (`y`) — copy the raw line of the selected event.
+- **Mouse support** — click a row to select it, scroll wheel to navigate.
+- **Resizable panels** (`Ctrl-N`) — adjust the Facets / Events / Detail split with arrow keys.
 - **Background parsing** — the UI never blocks.
-- **Clickable facets** (level, channel, method, status, IP, country…), full-text search, date-range filter, time histogram.
-- **Vim-style keyboard navigation**: `j/k`, `g/G`, `PgUp/PgDn`.
+- **Clickable facets** (level, channel, method, status, IP, country…), full-text search, date-range filter.
+- **Vim-style keyboard navigation**: `j/k`, `h/l`, `g/G`, `PgUp/PgDn`.
 - The **most recent events are displayed at the bottom** of the list, like `tail -f`.
 
 ## Prerequisites
@@ -89,19 +95,23 @@ Recognized values for `--format`:
 |------------------|---------------------------------------------|
 | `q` / `Ctrl-C`   | quit                                        |
 | `?`              | show / hide help                            |
-| `1` / `2`        | Events / Histogram tab                      |
 | `j` / `↓`        | move down (toward most recent)              |
 | `k` / `↑`        | move up (toward oldest)                     |
 | `g`              | top of the list (oldest)                    |
 | `G`              | bottom of the list (most recent, tail)      |
 | `PgUp` / `PgDn`  | jump 10 lines                               |
 | `f` / `e`        | focus Facets / Events panel                 |
+| `h` / `l`, `←/→` | switch focus (left = Facets, right = Events)|
 | `Space`          | toggle a facet value                        |
 | `/`              | full-text search                            |
 | `d`              | date-range modal                            |
 | `r`              | reset all filters                           |
 | `x`              | export menu (focused facet / filtered log → `.txt`) |
-| `Enter`          | open detail (coming soon)                   |
+| `Ctrl-N`         | enter resize mode (arrows to adjust, Esc to exit)   |
+| `F`              | toggle follow mode (live tail, streams new lines)   |
+| `*`              | correlate: filter by trace_id / request_id of event |
+| `y`              | yank: copy the selected log line to the clipboard   |
+| mouse            | click a row to select it, wheel to scroll           |
 | `Esc`            | close popup / clear search                  |
 
 ## "Country" facet via GeoIP
