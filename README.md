@@ -48,11 +48,20 @@ Pre-built binaries are available on the [releases page](https://github.com/gille
 Download the archive matching your platform, extract it, and move the binary to a directory in your `PATH`:
 
 ```bash
-# Example for Linux x86_64 — adjust the version and asset name as needed
-curl -L https://github.com/gilles-g/lazylog/releases/latest/download/lazylog-linux-x86_64.tar.gz \
+# Linux x86_64
+curl -L https://github.com/gilles-g/lazylog/releases/latest/download/lazylog-x86_64-unknown-linux-gnu.tar.gz \
   | tar -xz
 mv lazylog ~/.local/bin/
 ```
+
+Available archives (replace the target triple in the URL):
+
+| Platform      | Asset                                           |
+|---------------|-------------------------------------------------|
+| Linux x86_64  | `lazylog-x86_64-unknown-linux-gnu.tar.gz`       |
+| Linux arm64   | `lazylog-aarch64-unknown-linux-gnu.tar.gz`      |
+| macOS x86_64  | `lazylog-x86_64-apple-darwin.tar.gz`            |
+| macOS arm64   | `lazylog-aarch64-apple-darwin.tar.gz`           |
 
 ### From source
 
