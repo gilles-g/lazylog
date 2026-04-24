@@ -21,11 +21,6 @@ facet:
 
 ![GeoIP demo](.github/assets/demo-geoip.gif)
 
-> Both GIFs are scripted with [vhs](https://github.com/charmbracelet/vhs) —
-> source tapes at [`demo.tape`](demo.tape) and [`demo-geoip.tape`](demo-geoip.tape),
-> sample logs under [`testdata/`](testdata/). Re-render with
-> `cargo build --release && vhs demo.tape`.
-
 ## Features
 
 - **Memory-mapped file opening** — no copy, handles multi-GB files.
