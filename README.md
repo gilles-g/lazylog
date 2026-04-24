@@ -8,6 +8,24 @@ A terminal user interface (TUI) for exploring log files (Symfony / Monolog, ngin
 
 Built with [ratatui](https://ratatui.rs) + [crossterm](https://github.com/crossterm-rs/crossterm).
 
+## Demo
+
+Browse a Symfony/Monolog log — navigate events, open detail, toggle facets,
+full-text search, and cluster every line of a single request with `*`:
+
+![lazylog demo](.github/assets/demo.gif)
+
+GeoIP **Country** facet on an nginx access log — filter by country, isolate a
+`masscan` scanner via full-text search, drill into 4xx via the Status-class
+facet:
+
+![GeoIP demo](.github/assets/demo-geoip.gif)
+
+> Both GIFs are scripted with [vhs](https://github.com/charmbracelet/vhs) —
+> source tapes at [`demo.tape`](demo.tape) and [`demo-geoip.tape`](demo-geoip.tape),
+> sample logs under [`testdata/`](testdata/). Re-render with
+> `cargo build --release && vhs demo.tape`.
+
 ## Features
 
 - **Memory-mapped file opening** — no copy, handles multi-GB files.
