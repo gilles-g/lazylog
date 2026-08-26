@@ -63,6 +63,9 @@ Available archives (replace the target triple in the URL):
 | macOS x86_64  | `lazylog-x86_64-apple-darwin.tar.gz`            |
 | macOS arm64   | `lazylog-aarch64-apple-darwin.tar.gz`           |
 
+The Linux binaries are built against glibc 2.35, so they run on Debian 12+,
+Ubuntu 22.04+ and any distribution shipping a newer glibc.
+
 ### From source
 
 ```bash
