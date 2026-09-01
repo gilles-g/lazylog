@@ -21,6 +21,15 @@ pub fn scan(cwd: &Path) -> Vec<CandidateLog> {
     out
 }
 
+/// Scan a single directory passed as argument (e.g. `lazylog /var/log/nginx`).
+pub fn scan_dir(root: &Path, depth: usize) -> Vec<CandidateLog> {
+    let mut out = Vec::new();
+    collect(root, depth, &mut out);
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out.dedup_by(|a, b| a.path == b.path);
+    out
+}
+
 fn collect(root: &Path, depth: usize, out: &mut Vec<CandidateLog>) {
     if !root.exists() {
         return;

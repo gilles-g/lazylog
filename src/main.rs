@@ -45,7 +45,7 @@ const LARGE_FILE_BYTES: u64 = 100 * 1024 * 1024;
     about = "TUI for browsing log files (Symfony, nginx, apache, PHP, …)"
 )]
 struct Cli {
-    /// Path to the log file. If omitted, a picker scans var/log, logs/ and /var/log.
+    /// Path to a log file, or a directory to browse. If omitted, a picker scans var/log, logs/ and /var/log.
     path: Option<PathBuf>,
 
     /// Force a specific format (symfony, php, nginx-access, nginx-error, apache-access, apache-error, generic).
@@ -84,6 +84,10 @@ fn main() -> Result<()> {
 
 fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, cli: Cli) -> Result<()> {
     let path = match cli.path {
+        Some(p) if p.is_dir() => match pick_in_dir(terminal, &p)? {
+            Some(p) => p,
+            None => return Ok(()),
+        },
         Some(p) => p,
         None => match pick_file(terminal)? {
             Some(p) => p,
@@ -240,7 +244,21 @@ fn prompt_date_range<B: ratatui::backend::Backend>(
 
 fn pick_file<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<Option<PathBuf>> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut state = PickerState::new(scanner::scan(&cwd));
+    run_picker(terminal, scanner::scan(&cwd))
+}
+
+fn pick_in_dir<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    dir: &Path,
+) -> Result<Option<PathBuf>> {
+    run_picker(terminal, scanner::scan_dir(dir, 2))
+}
+
+fn run_picker<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    candidates: Vec<scanner::CandidateLog>,
+) -> Result<Option<PathBuf>> {
+    let mut state = PickerState::new(candidates);
     loop {
         terminal.draw(|f| state.render(f, f.area()))?;
         if event::poll(Duration::from_millis(100))? {
