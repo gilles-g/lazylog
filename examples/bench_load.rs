@@ -34,6 +34,10 @@ fn main() {
     let total: u32 = loop {
         match handle.rx.recv() {
             Ok(LoadMsg::Source(src)) => source_bytes = src.len(),
+            Ok(LoadMsg::IndexReady { total }) => {
+                println!("indexed: {total} non-empty lines");
+            }
+            Ok(LoadMsg::Progress { .. }) => {}
             Ok(LoadMsg::Chunk(chunk)) => {
                 if first_line.is_none() {
                     first_line = chunk.first().map(|e| e.line_no);

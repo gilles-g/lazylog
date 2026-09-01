@@ -8,6 +8,8 @@ use crossterm::event::{
 };
 use ratatui::backend::Backend;
 use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Gauge, Paragraph};
 use ratatui::Terminal;
 
 use crate::log::correlation;
@@ -62,6 +64,11 @@ pub struct App {
     load: Option<LoadHandle>,
     loading: bool,
     cancelled: bool,
+    /// Denominator for the progress bar — total count of non-empty lines the
+    /// loader will walk. `0` while we are still in the indexing phase.
+    load_total: u32,
+    /// Cumulative count of lines already walked by the parsing phase.
+    load_processed: u32,
     last_recompute: Instant,
     pending_dirty: bool,
 
@@ -123,6 +130,8 @@ impl App {
             load: Some(load),
             loading: true,
             cancelled: false,
+            load_total: 0,
+            load_processed: 0,
             last_recompute: Instant::now(),
             pending_dirty: false,
             auto_tail: true,
@@ -171,13 +180,24 @@ impl App {
                 Ok(LoadMsg::Source(src)) => {
                     self.source = Some(src);
                 }
+                Ok(LoadMsg::IndexReady { total }) => {
+                    self.load_total = total;
+                }
+                Ok(LoadMsg::Progress { processed }) => {
+                    self.load_processed = processed;
+                }
                 Ok(LoadMsg::Chunk(mut chunk)) => {
+                    // A Chunk arriving also implicitly means `chunk.len()` more
+                    // events got through the filter, but `load_processed` is
+                    // updated separately by the Progress heartbeat, so we
+                    // don't need to derive anything here.
                     self.events.append(&mut chunk);
                     dirty = true;
                 }
                 Ok(LoadMsg::Done { cancelled, .. }) => {
                     self.loading = false;
                     self.cancelled = cancelled;
+                    self.load_processed = self.load_total;
                     done = true;
                     dirty = true;
                     break;
@@ -770,9 +790,32 @@ impl App {
         self.force_recompute();
     }
 
+    fn render_progress(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        // Indexing phase (forward memchr scan) completes before we learn the
+        // denominator. Show a plain shimmer line to avoid flashing "0%".
+        if self.load_total == 0 {
+            let widget = Paragraph::new("indexing… (Esc to stop)")
+                .style(Style::default().fg(Color::LightYellow));
+            frame.render_widget(widget, area);
+            return;
+        }
+        let ratio = (self.load_processed as f64 / self.load_total as f64).clamp(0.0, 1.0);
+        let label = format!(
+            "loading {}/{} lines ({:.0}%) — Esc to stop",
+            self.load_processed,
+            self.load_total,
+            ratio * 100.0,
+        );
+        let gauge = Gauge::default()
+            .gauge_style(Style::default().fg(Color::LightYellow).bg(Color::DarkGray))
+            .ratio(ratio)
+            .label(label);
+        frame.render_widget(gauge, area);
+    }
+
     fn draw(&mut self, frame: &mut ratatui::Frame<'_>) {
         let area = frame.area();
-        let layout = main_layout(area, self.facets_ratio);
+        let layout = main_layout(area, self.facets_ratio, self.loading);
         self.last_facets_area = layout.facets;
 
         FacetsPanel::render(
@@ -801,6 +844,10 @@ impl App {
                 .get(self.event_cursor)
                 .map(|&i| &self.events[i as usize]);
             DetailPanel::render(frame, detail_rect, ev, self.source.as_deref());
+        }
+
+        if let Some(progress_rect) = layout.progress {
+            self.render_progress(frame, progress_rect);
         }
 
         let toast = self.toast.as_ref().and_then(|(msg, is_err, at)| {

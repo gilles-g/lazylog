@@ -35,13 +35,9 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, s: StatusLine<'_>) {
         Span::raw(" events  "),
         Span::styled(s.path, Style::default().fg(Color::DarkGray)),
     ];
-    if s.loading {
-        spans.push(Span::raw("  "));
-        spans.push(Span::styled(
-            "loading… (Esc to stop)",
-            Style::default().fg(Color::LightYellow),
-        ));
-    } else if s.cancelled {
+    // Loading progress is rendered as its own Gauge row above the status bar;
+    // we only keep the "partial (stopped)" badge here for a cancelled load.
+    if !s.loading && s.cancelled {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(
             "partial (stopped)",

@@ -9,14 +9,28 @@ const RATIO_STEP: f64 = 0.02;
 pub struct MainLayout {
     pub facets: Rect,
     pub content: Rect,
+    /// Present only while the loader is still working — a one-row strip
+    /// between the content and the status bar reserved for the progress gauge.
+    pub progress: Option<Rect>,
     pub status: Rect,
 }
 
-pub fn main_layout(area: Rect, facets_ratio: f64) -> MainLayout {
-    let vchunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(area);
+pub fn main_layout(area: Rect, facets_ratio: f64, show_progress: bool) -> MainLayout {
+    let vchunks = if show_progress {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(area)
+    };
     let mut facets_w = (vchunks[0].width as f64 * facets_ratio) as u16;
     if facets_w < 12 {
         facets_w = 12.min(vchunks[0].width);
@@ -25,10 +39,16 @@ pub fn main_layout(area: Rect, facets_ratio: f64) -> MainLayout {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(facets_w), Constraint::Min(10)])
         .split(vchunks[0]);
+    let (progress, status) = if show_progress {
+        (Some(vchunks[1]), vchunks[2])
+    } else {
+        (None, vchunks[1])
+    };
     MainLayout {
         facets: hchunks[0],
         content: hchunks[1],
-        status: vchunks[1],
+        progress,
+        status,
     }
 }
 

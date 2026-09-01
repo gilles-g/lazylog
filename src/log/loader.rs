@@ -13,6 +13,10 @@ use crate::log::parser::parser_for;
 use crate::log::source::FileSource;
 
 const CHUNK: usize = 10_000;
+/// Send a progress heartbeat every N walked lines when we don't happen to be
+/// flushing a chunk — keeps the UI bar moving even when most events are being
+/// filtered out by a date range.
+const PROGRESS_TICK: u32 = 50_000;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DateFilter {
@@ -47,8 +51,23 @@ impl DateFilter {
 
 pub enum LoadMsg {
     Source(Arc<FileSource>),
+    /// Sent once, right after the forward line-index scan completes. `total` is
+    /// the count of non-empty lines the parsing phase will walk through — the
+    /// denominator for the progress bar.
+    IndexReady {
+        total: u32,
+    },
+    /// Periodic heartbeat during parsing. `processed` is the cumulative number
+    /// of index entries walked, not the number of kept events (date-range
+    /// filtering can skip many).
+    Progress {
+        processed: u32,
+    },
     Chunk(Vec<LogEvent>),
-    Done { total: u32, cancelled: bool },
+    Done {
+        total: u32,
+        cancelled: bool,
+    },
     Error(String),
 }
 
@@ -106,8 +125,12 @@ pub fn load(
             }
         };
         let total_lines = index.last().map(|l| l.line_no).unwrap_or(0);
+        let index_len = index.len() as u32;
+        let _ = tx.send(LoadMsg::IndexReady { total: index_len });
 
         let mut buf: Vec<LogEvent> = Vec::with_capacity(CHUNK);
+        let mut processed: u32 = 0;
+        let mut last_progress_sent: u32 = 0;
         // Reverse iteration: newest file lines first.
         for entry in index.iter().rev() {
             if cancel_thread.load(Ordering::Relaxed) {
@@ -123,12 +146,18 @@ pub fn load(
                 return;
             }
             push_line(&*parser, bytes, entry, &date_filter, &mut buf);
+            processed = processed.saturating_add(1);
             if buf.len() >= CHUNK {
                 let mut chunk = std::mem::replace(&mut buf, Vec::with_capacity(CHUNK));
                 enrich(&mut chunk, geo.as_deref());
                 if tx.send(LoadMsg::Chunk(chunk)).is_err() {
                     return;
                 }
+                let _ = tx.send(LoadMsg::Progress { processed });
+                last_progress_sent = processed;
+            } else if processed - last_progress_sent >= PROGRESS_TICK {
+                let _ = tx.send(LoadMsg::Progress { processed });
+                last_progress_sent = processed;
             }
         }
         if !buf.is_empty() {
